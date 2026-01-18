@@ -1,0 +1,18 @@
+{
+  "name": "chat-interface",
+  "version": "1.0.0",
+  "description": "A basic Node.js app with Express",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google-cloud/secret-manager": "^6.1.1",
+    "@google-cloud/vertexai": "^1.5.0",
+    "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "author": "",
+  "license": "MIT"
+}

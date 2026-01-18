@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <script type="module" src="./web-component/ai-chat-interface.js"></script>
+  <body>
+    <ai-chat-interface include-input include-output></ai-chat-interface>
+    <script>
+      const chatInterface = document.querySelector('ai-chat-interface');
+
+      chatInterface.addEventListener('message', (event) => {
+        console.log('Message from AI:', event.detail);
+      });
+
+      chatInterface.addEventListener('error', (event) => {
+        console.error('Error from AI:', event.detail);
+      });
+    </script>
+  </body>
+</html>
+

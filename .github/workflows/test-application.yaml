@@ -1,0 +1,85 @@
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'application/test-application/**' # Only trigger on changes in this folder
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'application/test-application/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: rapid-prototype
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    
+    steps:
+      - uses: 'actions/checkout@v3'
+      
+      - id: 'setup-gcloud'
+        name: 'Setup Google Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ secrets.PROJECT_ID }}
+      
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/${{ secrets.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ secrets.WORKLOAD_IDENTITY_POOL_ID }}/providers/${{ secrets.WORKLOAD_IDENTITY_POOL_PROVIDER_ID }}'
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+
+      - id: 'verify-auth'
+        name: 'Verify Authentication'
+        run: |
+          echo "Verifying authentication..."
+          gcloud config set project ${{ secrets.PROJECT_ID }}
+          
+          # Test authentication - if this works, authentication is successful
+          # Note: gcloud auth list shows "No credentialed accounts" with ADC, which is normal
+          echo "Testing project access..."
+          if gcloud projects describe ${{ secrets.PROJECT_ID }} >/dev/null 2>&1; then
+            echo "✓ Authentication successful - can access project"
+          else
+            echo "✗ Authentication failed - cannot access project"
+            exit 1
+          fi
+          
+          # Test Storage access
+          BUCKET_NAME="${{ secrets.PROJECT_ID }}-spa"
+          echo "Checking Storage bucket access: ${BUCKET_NAME}"  
+          
+          # Try using gcloud storage (newer API) first
+          if gcloud storage buckets describe "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
+            echo "✓ Can access bucket ${BUCKET_NAME} (via gcloud storage)"
+          elif gsutil ls -b "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
+            echo "✓ Can access bucket ${BUCKET_NAME} (via gsutil)"
+          else
+            echo "⚠ Warning: Cannot verify bucket access"
+            echo "Bucket name: ${BUCKET_NAME}"
+            echo "Project: ${{ secrets.PROJECT_ID }}"
+            echo ""
+            echo "This might be normal if:"
+            echo "  1. The bucket doesn't exist yet"
+            echo "  2. There's a temporary IAM propagation delay"
+            echo ""
+            echo "The upload step will attempt to access the bucket and provide detailed error messages if it fails."
+          fi
+      
+      - id: 'upload-artifact'
+        name: 'Upload Artifact'
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+        run: |
+          WORKING_DIR="application/test-application"
+          cd $WORKING_DIR || { echo "Directory $WORKING_DIR not found."; exit 1; }
+          # Bucket name follows the pattern: {PROJECT_ID}-spa
+          BUCKET_NAME="${PROJECT_ID}-spa"
+          echo "Uploading to bucket: ${BUCKET_NAME}"
+          bash upload-to-cloud-storage.sh "$BUCKET_NAME"

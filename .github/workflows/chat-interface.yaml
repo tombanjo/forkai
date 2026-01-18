@@ -1,0 +1,63 @@
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'application/chat-interface/**' # Only trigger on changes in this folder
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'application/chat-interface/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: rapid-prototype
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    
+    steps:
+      - uses: 'actions/checkout@v3'
+      
+      - id: 'setup-gcloud'
+        name: 'Setup Google Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ secrets.PROJECT_ID }}
+      
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/${{ secrets.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ secrets.WORKLOAD_IDENTITY_POOL_ID }}/providers/${{ secrets.WORKLOAD_IDENTITY_POOL_PROVIDER_ID }}'
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+
+      - id: 'verify-auth'
+        name: 'Verify Authentication'
+        run: |
+          echo "Verifying authentication..."
+          gcloud config set project ${{ secrets.PROJECT_ID }}
+          gcloud auth list
+          gcloud projects describe ${{ secrets.PROJECT_ID }}
+          
+      - id: 'install-pack'
+        name: 'Install pack CLI'
+        run: |
+          echo "Installing pack CLI..."
+          curl -sSL "https://github.com/buildpacks/pack/releases/download/v0.37.0/pack-v0.37.0-linux.tgz" | tar -xzv
+          sudo mv pack /usr/local/bin/
+          
+      - id: 'upload-artifact'
+        name: 'Upload Artifact'
+        env:
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev
+          WORKING_DIR="application/chat-interface"
+          cd $WORKING_DIR || { echo "Directory $WORKING_DIR not found."; exit 1; }
+          # Use PROJECT_ID from GitHub secrets
+          bash publish-build.sh "$PROJECT_ID"
+          bash deploy-to-cloud-run.sh "$PROJECT_ID"
