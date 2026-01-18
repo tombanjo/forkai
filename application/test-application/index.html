@@ -11,7 +11,6 @@
     <div class="app-container">
       <header class="app-header">
         <h1>AI Chat Assistant</h1>
-        <p class="subtitle">Powered by Google Vertex AI</p>
       </header>
       
       <main class="app-main">
@@ -116,12 +115,14 @@
       chatInterface.addEventListener('message', (event) => {
         console.log('Message from AI:', event.detail);
         hideLoading();
-        const markdownHtml = renderMarkdown(event.detail);
+        const { message, modelProvider } = event.detail;
+        const markdownHtml = renderMarkdown(message);
+        const providerLabel = modelProvider ? `<p class="model-provider">Powered by: ${modelProvider}</p>` : '';
         outputBox.innerHTML = `
           <div class="output-header">
             <h2>AI Response</h2>
           </div>
-          <div class="ai-chat-output-content">${markdownHtml}</div>
+          <div class="ai-chat-output-content">${markdownHtml}${providerLabel}</div>
         `;
       });
       

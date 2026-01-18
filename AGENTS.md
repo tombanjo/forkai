@@ -4,12 +4,12 @@
 
 This is a **cloud-driven app**. The primary development loop is:
 
-1. Make code changes
+1. Make code changes in new branch
 2. Commit and push to a branch
 3. Open a PR targeting `main` (triggers CI workflow)
 4. Merge to `main` (triggers deployment via GitHub Actions)
 
-**Do not rely on local testing as the primary e2e validation method.** The cloud environment is the source of truth.
+**Do not rely on local testing as the primary e2e validation method.** The cloud environment is the source of truth. Debugging will be through appropriate cloud channels
 
 ## Repo Map
 
