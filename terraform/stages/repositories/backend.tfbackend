@@ -1,0 +1,2 @@
+bucket = "terraform-remote-state-forkai-413"
+prefix = "dev/terraform/state/repositories"

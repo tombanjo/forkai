@@ -1,2 +1,0 @@
-bucket = "terraform-remote-state-my-gcp-project"
-prefix = "dev/terraform/state/repositories"

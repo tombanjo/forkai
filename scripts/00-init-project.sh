@@ -92,4 +92,5 @@ gcloud services enable cloudresourcemanager.googleapis.com --project=$PROJECT_ID
 gcloud services enable artifactregistry.googleapis.com --project=$PROJECT_ID
 gcloud services enable run.googleapis.com --project=$PROJECT_ID
 gcloud services enable aiplatform.googleapis.com --project=$PROJECT_ID
+gcloud services enable secretmanager.googleapis.com --project=$PROJECT_ID
 echo "Enabling APIs complete."

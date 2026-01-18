@@ -244,18 +244,104 @@ validate_authentication() {
     has_errors=true
   fi
   
-  # Check git remote
+  # Check git remote (assume valid if exists)
   if git remote get-url origin &>/dev/null; then
     print_success "Git remote: $(git remote get-url origin)"
   else
-    print_error "No git remote 'origin' configured"
-    has_errors=true
+    print_warning "No git remote 'origin' configured (optional for this setup)"
   fi
   
   if [ "$has_errors" = true ]; then
     echo ""
     print_error "Please fix authentication issues and try again."
     exit 1
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Set and validate GCP project
+# -----------------------------------------------------------------------------
+set_and_validate_project() {
+  local project_id="$1"
+  
+  print_step "Setting and Validating GCP Project"
+  
+  # Set the active project
+  echo "Setting active GCP project to: $project_id"
+  if ! gcloud config set project "$project_id" 2>/dev/null; then
+    print_error "Failed to set GCP project to: $project_id"
+    exit 1
+  fi
+  print_success "Active GCP project set to: $project_id"
+  
+  # Verify we can access the project
+  echo "Verifying project access..."
+  if ! gcloud projects describe "$project_id" &>/dev/null; then
+    print_warning "Project '$project_id' does not exist or is not accessible"
+    echo ""
+    echo -e "${YELLOW}Would you like to create this project?${NC}"
+    read -p "Create project '$project_id'? (y/N) " -n 1 -r
+    echo ""
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      echo "Project creation declined. Exiting."
+      exit 1
+    fi
+    
+    # Create the project
+    echo "Creating GCP project: $project_id"
+    if gcloud projects create "$project_id" --set-as-default; then
+      print_success "Successfully created project: $project_id"
+    else
+      print_error "Failed to create project: $project_id"
+      echo ""
+      echo "Possible reasons:"
+      echo "  - Project ID already exists globally (try a different ID)"
+      echo "  - You don't have permission to create projects"
+      echo "  - Organization policy restrictions"
+      echo ""
+      exit 1
+    fi
+  else
+    print_success "Successfully verified access to project: $project_id"
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Check and enable billing
+# -----------------------------------------------------------------------------
+check_and_enable_billing() {
+  local project_id="$1"
+  
+  print_step "Checking Billing Status"
+  
+  # Check if billing is enabled
+  local billing_account
+  billing_account=$(gcloud billing projects describe "$project_id" --format="value(billingAccountName)" 2>/dev/null || echo "")
+  
+  if [ -z "$billing_account" ]; then
+    print_warning "Billing is not enabled for project: $project_id"
+    echo ""
+    echo -e "${YELLOW}This project requires billing to be enabled.${NC}"
+    echo ""
+    echo "You need to:"
+    echo "  1. Go to: https://console.cloud.google.com/billing/linkedaccount?project=$project_id"
+    echo "  2. Link a billing account to this project"
+    echo "  3. Come back and press Enter to continue"
+    echo ""
+    read -p "Press Enter once billing is enabled..." -r
+    
+    # Verify billing is now enabled
+    billing_account=$(gcloud billing projects describe "$project_id" --format="value(billingAccountName)" 2>/dev/null || echo "")
+    
+    if [ -z "$billing_account" ]; then
+      print_error "Billing still not enabled. Please enable billing and try again."
+      exit 1
+    fi
+    
+    print_success "Billing is now enabled"
+  else
+    print_success "Billing is enabled (Account: $billing_account)"
   fi
 }
 
@@ -277,9 +363,25 @@ main() {
     PROJECT_ID="$1"
     print_success "Using provided PROJECT_ID: $PROJECT_ID"
   else
-    PROJECT_ID=$(derive_project_id)
-    print_success "Derived PROJECT_ID from repository: $PROJECT_ID"
+    # Derive default from repository
+    DEFAULT_PROJECT_ID=$(derive_project_id)
+    echo ""
+    echo -e "${YELLOW}Enter GCP Project ID${NC}"
+    read -p "Project ID [$DEFAULT_PROJECT_ID]: " PROJECT_ID
+    
+    # Use default if user just hit enter
+    if [ -z "$PROJECT_ID" ]; then
+      PROJECT_ID="$DEFAULT_PROJECT_ID"
+    fi
+    
+    print_success "Using PROJECT_ID: $PROJECT_ID"
   fi
+  
+  # Set and validate GCP project immediately
+  set_and_validate_project "$PROJECT_ID"
+  
+  # Check and enable billing
+  check_and_enable_billing "$PROJECT_ID"
   
   # Set region
   REGION="${2:-us-central1}"
@@ -287,14 +389,21 @@ main() {
   
   # Get GitHub repository
   GITHUB_REPO=$(get_github_repo)
-  print_success "GitHub repository: $GITHUB_REPO"
+  if [ -n "$GITHUB_REPO" ]; then
+    print_success "GitHub repository: $GITHUB_REPO"
+  else
+    print_warning "Could not determine GitHub repository (optional)"
+    GITHUB_REPO=""
+  fi
   
   # Confirm before proceeding
   echo ""
   echo -e "${YELLOW}This will set up the following:${NC}"
   echo "  - GCP Project: $PROJECT_ID"
   echo "  - Region: $REGION"
-  echo "  - GitHub Repo: $GITHUB_REPO"
+  if [ -n "$GITHUB_REPO" ]; then
+    echo "  - GitHub Repo: $GITHUB_REPO"
+  fi
   echo ""
   read -p "Continue? (y/N) " -n 1 -r
   echo ""
@@ -326,7 +435,7 @@ main() {
   
   # Create GitHub environment if it doesn't exist
   echo "Creating GitHub environment 'rapid-prototype'..."
-  gh api repos/"$GITHUB_REPO"/environments/rapid-prototype -X PUT -f wait_timer=0 2>/dev/null || \
+  gh api repos/"$GITHUB_REPO"/environments/rapid-prototype -X PUT -F wait_timer=0 2>/dev/null || \
     print_warning "Could not create environment (may already exist or require admin permissions)"
   
   # -----------------------------------------------------------------------------
@@ -335,13 +444,6 @@ main() {
   print_step "Step 02: Deploy Development Infrastructure"
   bash scripts/02-dev-infrastructure.sh "$PROJECT_ID" "$REGION"
   print_success "Development infrastructure deployed"
-  
-  # -----------------------------------------------------------------------------
-  # Step 04: Deploy Application Infrastructure
-  # -----------------------------------------------------------------------------
-  print_step "Step 04: Deploy Application Infrastructure"
-  bash scripts/04-app-infrastructure.sh "$PROJECT_ID" "$REGION"
-  print_success "Application infrastructure deployed"
   
   # -----------------------------------------------------------------------------
   # Step 05: Setup Google AI Studio API Key
@@ -356,9 +458,15 @@ main() {
   print_step "Step 06: Build and Deploy API"
   cd application/chat-interface
   bash publish-build.sh "$PROJECT_ID" "$REGION" "chat-service"
-  bash deploy-to-cloud-run.sh "$PROJECT_ID" "$REGION" "chat-service"
   cd ../..
-  print_success "API deployed to Cloud Run"
+  print_success "API built and published to Artifact Registry"
+  
+  # -----------------------------------------------------------------------------
+  # Step 04: Deploy Application Infrastructure (Cloud Run)
+  # -----------------------------------------------------------------------------
+  print_step "Step 04: Deploy Application Infrastructure"
+  bash scripts/04-app-infrastructure.sh "$PROJECT_ID" "$REGION"
+  print_success "Application infrastructure deployed"
   
   # -----------------------------------------------------------------------------
   # Step 07: Deploy Client (SPA)
@@ -373,6 +481,13 @@ main() {
   # -----------------------------------------------------------------------------
   # Done!
   # -----------------------------------------------------------------------------
+  
+  # Get the Cloud Run service URL
+  CHAT_SERVICE_URL=$(gcloud run services describe chat-service \
+    --platform managed \
+    --region "$REGION" \
+    --format 'value(status.url)' 2>/dev/null || echo "https://chat-service-<hash>.run.app")
+  
   echo ""
   echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${GREEN}║                      Setup Complete!                              ║${NC}"
@@ -380,15 +495,33 @@ main() {
   echo ""
   echo "Your AI Web Component is now deployed!"
   echo ""
+  echo -e "${BLUE}=== Deployment Information ===${NC}"
+  echo ""
+  echo "GCP Project:"
+  echo "  Project ID: $PROJECT_ID"
+  echo "  Region: $REGION"
+  echo ""
   echo "Resources:"
-  echo "  - Cloud Run API: https://console.cloud.google.com/run?project=$PROJECT_ID"
-  echo "  - Cloud Storage SPA: https://storage.googleapis.com/${BUCKET_NAME}/index.html"
-  echo "  - GitHub Actions: https://github.com/$GITHUB_REPO/actions"
+  echo "  Cloud Run API: $CHAT_SERVICE_URL"
+  echo "  Cloud Storage SPA: https://storage.googleapis.com/${BUCKET_NAME}/index.html"
+  echo "  GitHub Repository: https://github.com/$GITHUB_REPO"
+  echo "  GitHub Actions: https://github.com/$GITHUB_REPO/actions"
+  echo ""
+  echo "GitHub Secrets (already configured):"
+  echo "  ✓ PROJECT_ID"
+  echo "  ✓ PROJECT_NUMBER"
+  echo "  ✓ SERVICE_ACCOUNT_EMAIL"
+  echo "  ✓ WORKLOAD_IDENTITY_POOL_ID"
+  echo "  ✓ WORKLOAD_IDENTITY_POOL_PROVIDER_ID"
+  echo ""
+  echo "Environment:"
+  echo "  GitHub Environment: rapid-prototype"
   echo ""
   echo "Next steps:"
-  echo "  1. Test the SPA at the Cloud Storage URL above"
-  echo "  2. Push changes to main branch to trigger CI/CD"
-  echo "  3. Customize the web component and API as needed"
+  echo "  1. Test the SPA at: https://storage.googleapis.com/${BUCKET_NAME}/index.html"
+  echo "  2. Test the API at: $CHAT_SERVICE_URL"
+  echo "  3. Push changes to main branch to trigger CI/CD"
+  echo "  4. Customize the web component and API as needed"
   echo ""
 }
 
