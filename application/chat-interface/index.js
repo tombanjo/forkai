@@ -14,7 +14,7 @@ const MODEL_PROVIDERS = Object.freeze({
   GOOGLE_VERTEXAI: 'google-vertexai',
   GOOGLE_AI_STUDIO: 'google-ai-studio',
 });
-const modelProvider = process.env.MODEL_PROVIDER || MODEL_PROVIDERS.GOOGLE_AI_STUDIO;
+const modelProvider = process.env.MODEL_PROVIDER || MODEL_PROVIDERS.GOOGLE_VERTEXAI;
 const googleAIStudioApiSecret = process.env.GOOGLE_AI_STUDIO_API_SECRET || 'gemini-api-key-secret';
 
 class ModelProvider {
