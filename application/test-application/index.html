@@ -115,9 +115,16 @@
       chatInterface.addEventListener('message', (event) => {
         console.log('Message from AI:', event.detail);
         hideLoading();
-        const { message, modelProvider } = event.detail;
+        const { message, modelProvider, modelName } = event.detail;
         const markdownHtml = renderMarkdown(message);
-        const providerLabel = modelProvider ? `<p class="model-provider">Powered by: ${modelProvider}</p>` : '';
+        let providerLabel = '';
+        if (modelProvider) {
+          providerLabel = `<p class="model-provider">Powered by: ${modelProvider}`;
+          if (modelName) {
+            providerLabel += ` (${modelName})`;
+          }
+          providerLabel += '</p>';
+        }
         outputBox.innerHTML = `
           <div class="output-header">
             <h2>AI Response</h2>

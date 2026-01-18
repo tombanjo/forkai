@@ -155,6 +155,7 @@ class AIChatInterface extends HTMLElement {
       const data = await response.json();
       const reply = data.reply || data.message || JSON.stringify(data);
       const modelProvider = data.debug?.modelProvider || null;
+      const modelName = data.debug?.MODEL_NAME || null;
       
       // Update embedded output if it exists
       if (this.hasAttribute('include-output')) {
@@ -167,7 +168,7 @@ class AIChatInterface extends HTMLElement {
       
       // Dispatch message event
       this.dispatchEvent(new CustomEvent('message', {
-        detail: { message: reply, modelProvider },
+        detail: { message: reply, modelProvider, modelName },
         bubbles: true,
         composed: true
       }));
